@@ -103,23 +103,49 @@ class SavePeftModelCallback(transformers.TrainerCallback):
         kwargs["tokenizer"].save_pretrained(peft_model_path)
 
 
-'''
-这段代码定义了一个名为accuracy的函数，它计算并返回预测值与参考（真实）值之间的准确率。这个函数是对sklearn.metrics.accuracy_score函数的简单封装，
-以字典形式返回计算结果，使其更适合与某些框架或自定义的评估流程集成。
-
-参数解释
-predictions: 预测标签的数组，模型对测试集或验证集的预测结果。
-references: 真实标签的数组，与预测数组相对应的真实标签。
-normalize: 布尔值，默认为True。当True时，函数返回正确预测的比例（即准确率）；当False时，返回正确预测的数量。这个参数直接传递给accuracy_score函数。
-sample_weight: 可选数组，形状与predictions一致。每个样本的权重。如果不为None，则计算加权平均准确率。这允许不同的样本对最终的准确率计算有不同的贡献。
-'''
 def accuracy(predictions, references, normalize=True, sample_weight=None):
         return {
             "accuracy": float(
                 accuracy_score(references, predictions, normalize=normalize, sample_weight=sample_weight)
             )
         }
+'''
+这个函数名为`accuracy`，它是用来计算模型预测的准确性的。准确性是衡量模型性能的一种方式，尤其在分类任务中非常常见。下面我们逐部分详细解释：
 
+### 函数定义
+```python
+def accuracy(predictions, references, normalize=True, sample_weight=None):
+```
+- `def`是Python中定义函数的关键词。
+- `accuracy`是这个函数的名称。
+- 括号中的`predictions, references, normalize=True, sample_weight=None`是函数接收的参数：
+  - `predictions`是模型预测的结果，通常是一个列表或数组，包含了对测试数据的预测类别。
+  - `references`是实际的正确结果，也就是每个测试样本的真实类别，用来和`predictions`进行比较。
+  - `normalize=True`是一个可选参数，表示是否将准确率标准化（或说归一化），即转换为0到1之间的值。如果为False，则返回正确预测的数量。
+  - `sample_weight=None`也是一个可选参数，允许对每个样本指定不同的权重，这在处理不平衡数据集时特别有用。
+
+### 函数主体
+```python
+    return {
+        "accuracy": float(
+            accuracy_score(references, predictions, normalize=normalize, sample_weight=sample_weight)
+        )
+    }
+```
+- `return`关键字表示函数的输出。
+- 函数返回一个字典，其中包含了一个键值对。键是字符串`"accuracy"`，而值是通过调用`accuracy_score`函数计算得到的准确率，转换为浮点数（`float`）。
+- `accuracy_score`是一个计算准确率的函数，这里假设它来自于某个库（如`sklearn.metrics`），它比较`references`（真实值）和`predictions`（预测值），根据`normalize`和`sample_weight`参数来计算准确率。
+  - 如果`normalize`为True，`accuracy_score`返回的是正确预测的比例（即准确率），值在0到1之间。
+  - 如果`normalize`为False，它返回正确预测的数量。
+  - `sample_weight`参数允许为每个样本分配不同的权重，在计算准确率时考虑这些权重，这对于某些样本比其他样本更重要的情况很有用。
+
+### 专业知识点解释
+- **准确率(Accuracy)**：是最直观的性能指标，它是正确预测的数量除以总预测数量。准确率是一个很好的度量标准，当且仅当各类别样本数量大致相等时。在不平衡的数据集中，它可能会给出误导性的高值。
+- **归一化(Normalization)**：在这个上下文中，归一化指的是将准确率转换为0到1之间的值，使结果易于理解和比较。
+- **样本权重(Sample Weight)**：在某些情况下，不是所有的样本都 equally 重要，某些样本可能比其他样本更加关键。通过为每个样本分配权重，我们可以让模型在计算准确率时更加注重这些重要的样本。
+
+通过这个`accuracy`函数，我们能够以字典的形式获取模型预测的准确性指标，这对于评估和比较模型的性能非常有用。
+'''
 
 def compute_metrics(eval_preds):
     preds, labels = eval_preds
@@ -128,6 +154,38 @@ def compute_metrics(eval_preds):
     labels = labels[:, 1:].reshape(-1)
     preds = preds[:, :-1].reshape(-1)
     return accuracy(predictions=preds, references=labels)
+'''
+这段代码定义了一个名为`compute_metrics`的函数，它的作用是计算模型在评估（或验证）阶段的性能指标。这里主要关注的性能指标依然是准确率。下面我们逐行解释它的功能：
+
+### 函数定义
+```python
+def compute_metrics(eval_preds):
+```
+这行代码定义了一个名为`compute_metrics`的函数，它接收一个参数`eval_preds`，这个参数通常是一个包含两个部分的元组（tuple），第一部分是模型的预测结果，第二部分是对应的真实标签。
+
+### 数据处理
+```python
+    preds, labels = eval_preds
+```
+这行代码将元组`eval_preds`分解为两个变量`preds`和`labels`，`preds`是模型的预测结果，`labels`是真实标签。
+
+```python
+    labels = labels[:, 1:].reshape(-1)
+    preds = preds[:, :-1].reshape(-1)
+```
+这两行代码对`labels`和`preds`进行了处理：
+- `labels[:, 1:]`取`labels`数组的每一行，从第二个元素到最后一个元素，这个操作可能是为了去掉一些特殊的标签，比如在序列任务中，第一个标签可能是起始符号，不需要考虑在准确率计算中。
+- `preds[:, :-1]`取`preds`数组的每一行，从第一个元素到倒数第二个元素，这可能是为了与`labels`对齐，去掉预测序列中最后一个元素，通常是终止符号。
+- `.reshape(-1)`将二维数组变形成一维数组，以便计算准确率。`-1`表示自动计算这一维的大小。
+
+### 计算并返回准确率
+```python
+    return accuracy(predictions=preds, references=labels)
+```
+这行代码调用了之前定义的`accuracy`函数，用处理过的预测结果`preds`和标签`labels`来计算准确率。
+
+整个`compute_metrics`函数的作用是接收模型的预测结果和真实标签，对它们进行预处理以确保数据格式正确，然后计算并返回模型的准确率。这样我们就可以知道模型在验证阶段的表现如何，从而作出相应的调整和改进。
+'''
 
 
 def preprocess_logits_for_metrics(logits, labels):
