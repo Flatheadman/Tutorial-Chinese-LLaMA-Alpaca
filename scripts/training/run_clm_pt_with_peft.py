@@ -26,39 +26,61 @@ import numpy as np
 import math
 import os
 import sys
+# dataclass是Python 3.7中引入的一个装饰器，用于自动添加特殊方法（如__init__和__repr__）到类中。field函数则用于定制dataclass类的字段。
 from dataclasses import dataclass, field
+# itertools模块包含创建有效循环的函数，chain函数可以把一组迭代对象串联起来，形成一个更大的迭代器。
 from itertools import chain
+# 这行代码从typing模块中导入了Optional, List, Dict, Any和Mapping。这些都是Python的类型注解，用于在代码中标注变量、函数返回值、函数参数等的预期类型，以提高代码的可读性和可维护性。Optional：用于标注变量或返回值
 from typing import Optional, List, Dict, Any, Mapping
 from pathlib import Path
 import datasets
-import torch
 from datasets import load_dataset, concatenate_datasets
+import torch
 
 import transformers
 from transformers import (
-    CONFIG_MAPPING,
-    MODEL_FOR_CAUSAL_LM_MAPPING,
-    AutoConfig,
-    AutoModelForCausalLM,
-    LlamaForCausalLM,
-    LlamaTokenizer,
-    AutoTokenizer,
-    HfArgumentParser,
-    Trainer,
-    TrainingArguments,
-    is_torch_tpu_available,
-    set_seed,
+    CONFIG_MAPPING, # 这是一个字典，用于映射不同预训练模型的配置类。例如，你可以使用CONFIG_MAPPING["gpt2"]来获取GPT-2模型的配置。
+    MODEL_FOR_CAUSAL_LM_MAPPING, # 这是一个字典，用于映射不同预训练模型的模型类。例如，你可以使用MODEL_FOR_CAUSAL_LM_MAPPING["gpt2"]来获取GPT-2模型的模型类。
+    AutoConfig, # 这是一个自动选择模型配置的类。你可以根据模型名称自动获取相应的配置。
+    AutoModelForCausalLM, # 这是一个自动选择模型的类。你可以根据模型名称自动获取相应的模型。
+    LlamaForCausalLM, # 这是一个自定义的Causal Language Modeling模型，可能是你自己定义的。
+    LlamaTokenizer, # 这是一个自定义的tokenizer，可能是你自己定义的。
+    AutoTokenizer, # 这是一个自动选择tokenizer的类。你可以根据模型名称自动获取相应的tokenizer。
+    HfArgumentParser, # 这是一个用于解析命令行参数的类。它可以自动将命令行参数转换为Python对象。
+    Trainer, # 这是一个用于训练模型的类。它封装了训练模型的所有细节，包括数据加载、优化器、学习率调度器等。
+    TrainingArguments, # 这是一个用于训练模型的参数类。它包含了训练模型时的所有参数，如学习率、批大小、训练轮数等。
+    is_torch_tpu_available, # 这是一个函数，用于检查当前环境是否支持TPU。
+    set_seed, # 这是一个函数，用于设置随机种子，以便实现可重复的随机结果。
 )
-from transformers.testing_utils import CaptureLogger
-from transformers.trainer_utils import get_last_checkpoint
-from transformers.utils import send_example_telemetry
-from transformers.utils.versions import require_version
+from transformers.testing_utils import CaptureLogger # 这是一个用于捕获日志的类。它可以捕获日志输出，以便在测试中进行断言。
+from transformers.trainer_utils import get_last_checkpoint # 这是一个函数，用于获取最后一个检查点的路径。
+from transformers.utils import send_example_telemetry   # 这是一个函数，用于发送遥测数据。遥测数据是用于收集用户使用模型的信息，以便更好地分配资源来维护模型。
+from transformers.utils.versions import require_version # 这是一个函数，用于检查当前环境是否安装了指定的库。如果没有安装，它会抛出一个异常。
 
-from sklearn.metrics import accuracy_score
-from peft import LoraConfig, TaskType, get_peft_model, PeftModel, get_peft_model_state_dict
-from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
+from sklearn.metrics import accuracy_score # 这是一个函数，用于计算准确率。
+from peft import (
+    LoraConfig,  # 这是一个类，用于配置Lora模型。
+    TaskType,  # 这是一个枚举类，用于指定任务类型。
+    get_peft_model,  # 这是一个函数，用于获取PEFT模型。
+    PeftModel,  # 这是一个类，用于定义PEFT模型。
+    get_peft_model_state_dict # 这是一个函数，用于获取PEFT模型的状态字典。
+)
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR # 这是一个字符串，用于指定检查点目录的前缀。
 
+'''
+这段代码定义了一个自定义的回调类SavePeftModelCallback，它继承自transformers.TrainerCallback，用于在训练过程中保存模型和分词器。
 
+save_model方法：这个方法用于保存模型和分词器到指定的文件夹。它接受三个参数：args表示训练参数，state表示当前训练状态，kwargs表示其他额外的参数。
+首先，它检查当前状态中是否存在最佳模型检查点，如果存在，则将模型保存在该检查点文件夹下，否则将模型保存在输出目录中。然后，构造模型保存路径peft_model_path，
+并调用模型和分词器的save_pretrained方法保存模型和分词器到该路径下。
+
+on_save方法：这个方法是transformers.Trainer在保存检查点时调用的钩子方法。它接受相同的参数，并在保存检查点时调用save_model方法保存模型和分词器，
+并返回control参数的值，通常是control.nochange，表示不对训练过程做任何修改。
+
+on_train_end方法：这个方法是transformers.Trainer在训练结束时调用的钩子方法。它也接受相同的参数，并在训练结束时调用save_model方法保存最终的模型和分词器到输出目录中。
+
+这个自定义的回调类的作用是在训练过程中保存模型和分词器，确保在训练结束时或在保存检查点时都能够保存当前模型的状态。
+'''
 class SavePeftModelCallback(transformers.TrainerCallback):
     def save_model(self, args, state, kwargs):
         if state.best_model_checkpoint is not None:
@@ -70,6 +92,7 @@ class SavePeftModelCallback(transformers.TrainerCallback):
         kwargs["model"].save_pretrained(peft_model_path)
         kwargs["tokenizer"].save_pretrained(peft_model_path)
 
+    
     def on_save(self, args, state, control, **kwargs):
         self.save_model(args, state, kwargs)
         return control
@@ -80,6 +103,16 @@ class SavePeftModelCallback(transformers.TrainerCallback):
         kwargs["tokenizer"].save_pretrained(peft_model_path)
 
 
+'''
+这段代码定义了一个名为accuracy的函数，它计算并返回预测值与参考（真实）值之间的准确率。这个函数是对sklearn.metrics.accuracy_score函数的简单封装，
+以字典形式返回计算结果，使其更适合与某些框架或自定义的评估流程集成。
+
+参数解释
+predictions: 预测标签的数组，模型对测试集或验证集的预测结果。
+references: 真实标签的数组，与预测数组相对应的真实标签。
+normalize: 布尔值，默认为True。当True时，函数返回正确预测的比例（即准确率）；当False时，返回正确预测的数量。这个参数直接传递给accuracy_score函数。
+sample_weight: 可选数组，形状与predictions一致。每个样本的权重。如果不为None，则计算加权平均准确率。这允许不同的样本对最终的准确率计算有不同的贡献。
+'''
 def accuracy(predictions, references, normalize=True, sample_weight=None):
         return {
             "accuracy": float(
@@ -87,11 +120,36 @@ def accuracy(predictions, references, normalize=True, sample_weight=None):
             )
         }
 
+'''
+当然，我会在代码中加入注释，以帮助你更好地理解每一行代码的作用和目的：
 
+```python
+# 定义一个函数 compute_metrics，用于计算评估指标
+def compute_metrics(eval_preds):
+    # 将传入的参数（预测值和标签）解包赋值给 preds 和 labels
+    preds, labels = eval_preds
+
+    # 对标签数据进行处理：
+    # labels[:, 1:] 的意思是选择所有行的第二列到最后一列（假设第一列有不需要的数据）
+    # .reshape(-1) 的作用是将选取的数据展平成一维数组
+    labels = labels[:, 1:].reshape(-1)
+
+    # 对预测数据进行处理：
+    # preds[:, :-1] 的意思是选择所有行的第一列到倒数第二列（假设最后一列有不需要的数据）
+    # .reshape(-1) 同样将选取的数据展平成一维数组
+    preds = preds[:, :-1].reshape(-1)
+
+    # 调用 accuracy 函数计算准确率，将处理过的预测值和标签作为参数
+    # 这里假设 accuracy 是一个已经定义好的函数，用于计算和返回准确率
+    return accuracy(predictions=preds, references=labels)
+```
+
+这段代码的主要目的是处理模型的预测值和真实标签，以适配`accuracy`函数计算准确率的要求。
+通过去除某些不需要的列（比如，可能是序列生成任务中的开始/结束标记），并将多维数据展平为一维，
+确保准确率的计算是基于每个预测和标签值，而不是基于整个序列或批次。
+'''
 def compute_metrics(eval_preds):
     preds, labels = eval_preds
-    # preds have the same shape as the labels, after the argmax(-1) has been calculated
-    # by preprocess_logits_for_metrics but we need to shift the labels
     labels = labels[:, 1:].reshape(-1)
     preds = preds[:, :-1].reshape(-1)
     return accuracy(predictions=preds, references=labels)

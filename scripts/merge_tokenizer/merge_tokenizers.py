@@ -1,9 +1,12 @@
 import os
-os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"]="python"
 from transformers import LlamaTokenizer
+# 用来指定使用纯python实现的protobuf库。protobuf库是google开发的一种数据序列化协议，用于序列化结构化数据。如果不指定，会使用C++实现的protobuf库，但是C++实现的protobuf库在某些情况下会有问题。
+os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"]="python" 
 from sentencepiece import sentencepiece_model_pb2 as sp_pb2_model
 import sentencepiece as spm
 import argparse
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--llama_tokenizer_dir', default=None, type=str, required=True)
 parser.add_argument('--chinese_sp_model_file', default='./chinese_sp.model', type=str)
@@ -12,7 +15,8 @@ args = parser.parse_args()
 llama_tokenizer_dir = args.llama_tokenizer_dir
 chinese_sp_model_file = args.chinese_sp_model_file
 
-# load
+
+# 从序列化文本加载sp格式的分词器模型
 llama_tokenizer = LlamaTokenizer.from_pretrained(llama_tokenizer_dir)
 chinese_sp_model = spm.SentencePieceProcessor()
 chinese_sp_model.Load(chinese_sp_model_file)
@@ -28,7 +32,7 @@ print(llama_tokenizer.all_special_tokens)
 print(llama_tokenizer.all_special_ids)
 print(llama_tokenizer.special_tokens_map)
 
-## Add Chinese tokens to LLaMA tokenizer
+## 将中文分词器的词汇表合并到LLaMA分词器的词汇表中，如果有重复的词汇，保留LLaMA分词器的词汇
 llama_spm_tokens_set=set(p.piece for p in llama_spm.pieces)
 print(len(llama_spm_tokens_set))
 print(f"Before:{len(llama_spm_tokens_set)}")
@@ -41,7 +45,7 @@ for p in chinese_spm.pieces:
         llama_spm.pieces.append(new_p)
 print(f"New model pieces: {len(llama_spm.pieces)}")
 
-## Save
+## 保存合并后的LLaMA分词器模型，格式为sp和hf
 output_sp_dir = 'merged_tokenizer_sp'
 output_hf_dir = 'merged_tokenizer_hf' # the path to save Chinese-LLaMA tokenizer
 os.makedirs(output_sp_dir,exist_ok=True)
@@ -53,7 +57,7 @@ tokenizer.save_pretrained(output_hf_dir)
 print(f"Chinese-LLaMA tokenizer has been saved to {output_hf_dir}")
 
 
-# Test
+# 测试对中文和英文语句的分词效果。可以看到，合并后的分词器可以识别中文词语而不是将中文词语拆分成单个字。如黄河、千里。
 llama_tokenizer = LlamaTokenizer.from_pretrained(llama_tokenizer_dir)
 chinese_llama_tokenizer = LlamaTokenizer.from_pretrained(output_hf_dir)
 print(tokenizer.all_special_tokens)
